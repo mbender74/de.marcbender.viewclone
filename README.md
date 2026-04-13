@@ -38,7 +38,7 @@ Add the module to your `tiapp.xml`:
 
 ```xml
 <modules>
-  <module version="1.0.0">de.marcbender.viewclone</module>
+  <module platform="android" version="1.0.0">de.marcbender.viewclone</module>
 </modules>
 ```
 
