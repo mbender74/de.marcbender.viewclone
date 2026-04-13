@@ -2,24 +2,25 @@
 
 ## Description
 
-Das ViewClone Module ermöglicht das effiziente Klonen von Titanium UI Views mit rekursiver Kopie aller Kind-Views, Properties und EventListener. Das Klonen erfolgt nativ auf Android-Ebene für maximale Performance.
+The ViewClone module enables efficient deep cloning of Titanium UI Views with recursive copying of all child views and properties. Cloning happens natively on the Android (Java) layer for maximum performance.
+
+Unlike the SDK's built-in `TiViewProxy.clone()`, which shares the same V8/JavaScript wrapper (KrollObject) between original and clone, ViewClone creates a truly independent clone with its own JavaScript identity.
 
 ## Features
 
-- **Rekursive Klonung**: Kopiert komplexe View-Hierarchien vollständig
-- **Property-Kopie**: Alle Titanium Properties werden übernommen
-- **EventListener-Kopie**: Event-Listener werden in den Klon übertragen
-- **Native Performance**: Klonen erfolgt auf Java-Ebene für schnelle Ausführung
-- **Kompatibilität**: Unterstützt alle Ti.UI.View Typen (View, Label, Button, ImageView, etc.)
-- **Template-Erstellung**: Erzeugt ListView-Templates aus bestehenden Views
+- **Recursive cloning**: Copies complex view hierarchies in full depth
+- **Property copy**: All Titanium properties are preserved
+- **Native performance**: Cloning executes on the Java layer for fast operation
+- **Compatibility**: Supports all Ti.UI.View types (View, Label, Button, ImageView, etc.)
+- **Independent identity**: Each clone gets its own V8 wrapper — no shared state with the original
 
 ## Accessing the ViewClone Module
 
-Um das Modul in JavaScript zu verwenden:
+To use the module in JavaScript:
 
 ```javascript
 import viewclone from 'de.marcbender.viewclone';
-// oder
+// or
 var viewclone = require('de.marcbender.viewclone');
 ```
 
@@ -27,17 +28,27 @@ var viewclone = require('de.marcbender.viewclone');
 
 ### viewclone.cloneView(view)
 
-Klonen einer TiViewProxy Instanz mit allen Properties und Kind-Views.
+Clones a TiViewProxy instance with all properties and child views. Child views are cloned recursively.
 
 #### Arguments
 
 | Name | Type | Description |
 |------|------|-------------|
-| view | TiViewProxy | Das zu klonende ViewProxy Objekt |
+| view | TiViewProxy | The view proxy to clone |
 
 #### Returns
 
-TiViewProxy - Das geklonte ViewProxy Objekt oder `null` bei einem Fehler.
+TiViewProxy — A new independent view proxy, or `null` if cloning fails.
+
+#### What gets cloned
+
+- All properties (positioning, styling, layout, fonts, colors, etc.)
+- Child views — recursively cloned and added to the cloned parent
+- The view type (`apiName`) — the clone is the same Ti.UI type as the original
+
+#### What does NOT get cloned
+
+- Event listeners — add new listeners to the clone as needed
 
 #### Example
 
@@ -56,7 +67,7 @@ win.add(clonedView);
 #### Complex View Example
 
 ```javascript
-// Erstelle ein komplexes Layout mit Kind-Views
+// Create a complex layout with child views
 const container = Ti.UI.createView({
     layout: 'vertical',
     backgroundColor: '#eee',
@@ -83,15 +94,22 @@ container.add(header);
 container.add(content);
 win.add(container);
 
-// Klonen des kompletten Layouts
+// Clone the entire layout
 const clonedContainer = viewclone.cloneView(container);
 clonedContainer.top = 250;
+
+// Access cloned children via the .children property
+const children = clonedContainer.children;
+if (children && children.length > 0) {
+    children[0].text = 'Cloned Header';
+}
+
 win.add(clonedContainer);
 ```
 
 ## Usage
 
-### Einfaches Klonen
+### Simple cloning
 
 ```javascript
 import viewclone from 'de.marcbender.viewclone';
@@ -106,9 +124,9 @@ const clone = viewclone.cloneView(original);
 clone.text = 'Cloned Text';
 ```
 
-### Rekursive Klonung mit Kind-Views
+### Recursive cloning with child views
 
-Das Modul klonet automatisch alle Kind-Views rekursiv:
+The module automatically clones all child views recursively:
 
 ```javascript
 const parent = Ti.UI.createView({
@@ -121,13 +139,13 @@ const child2 = Ti.UI.createLabel({ text: 'Child 2' });
 parent.add(child1);
 parent.add(child2);
 
-// Klonen kloniert auch child1 und child2
+// Cloning also clones child1 and child2
 const clonedParent = viewclone.cloneView(parent);
 ```
 
-### EventListener Handling
+### Event listener handling
 
-EventListener werden automatisch in den Klon kopiert. Zusätzliche EventListener können nach dem Klonen hinzugefügt werden:
+Event listeners are **not** cloned. Add your own listeners to the clone after cloning:
 
 ```javascript
 const button = Ti.UI.createButton({ title: 'Click me' });
@@ -138,141 +156,29 @@ button.addEventListener('click', function(e) {
 
 const clonedButton = viewclone.cloneView(button);
 
-// Füge eigenen Listener zum Klon hinzu
+// Add a new listener to the clone
 clonedButton.addEventListener('click', function(e) {
     console.log('Cloned clicked');
 });
 ```
 
-### viewclone.createTemplateFromView(view)
+### Accessing cloned children
 
-Erzeugt ein ListView Template aus einer TiUIView. Konvertiert eine komplexe View-Hierarchie in ein ListView-Template mit `childTemplates`.
-
-#### Arguments
-
-| Name | Type | Description |
-|------|------|-------------|
-| view | TiViewProxy | Das Source-View für das Template |
-
-#### Returns
-
-KrollDict - Ein Dictionary mit dem Template-Definition oder `null` bei einem Fehler.
-
-#### Example
+Use the `.children` property to access child views of a cloned view. Do **not** use `.getChildren()` — it is not available on cloned views because `children` is exposed as a JavaScript property via `@Kroll.getProperty`, not as a callable method.
 
 ```javascript
-// Erstelle eine komplexe View
-const sourceView = Ti.UI.createView({
-    backgroundColor: '#fff',
-    width: 300,
-    height: 100,
-    layout: 'horizontal'
-});
+const clonedView = viewclone.cloneView(parentView);
 
-const imageView = Ti.UI.createImageView({
-    image: '/images/icon.png',
-    width: 50,
-    height: 50,
-    left: 0
-});
+// Correct
+const children = clonedView.children;
 
-const label = Ti.UI.createLabel({
-    text: 'Item Title',
-    color: '#000',
-    font: { fontSize: 18, fontWeight: 'bold' },
-    left: 60,
-    top: 0
-});
-
-const subLabel = Ti.UI.createLabel({
-    text: 'Subtitle text',
-    color: '#888',
-    font: { fontSize: 14 },
-    left: 60,
-    top: 25
-});
-
-sourceView.add(imageView);
-sourceView.add(label);
-sourceView.add(subLabel);
-
-// Erzeuge das Template
-const myTemplate = viewclone.createTemplateFromView(sourceView);
-
-// Verwende das Template in einer ListView
-const listView = Ti.UI.createListView({
-    templates: {
-        'item': myTemplate
-    },
-    defaultItemTemplate: 'item'
-});
-
-// Items mit Daten füllen
-const items = [
-    { pic: '/images/item1.png', info: 'Item 1', es_info: 'Details 1' },
-    { pic: '/images/item2.png', info: 'Item 2', es_info: 'Details 2' }
-];
-
-// Erstelle Sections und füge Items hinzu
-const section = Ti.UI.createListSection({});
-section.setItems(items);
-listView.appendSection(section);
+// Incorrect — not available on cloned views
+const children = clonedView.getChildren();
 ```
 
-#### Generated Template Structure
+### Native view properties
 
-Das erzeugte Template hat folgende Struktur:
-
-```javascript
-{
-    tiProxy: {
-        className: 'org.appcelerator.titanium.proxy.TiViewProxy'
-    },
-    properties: {
-        backgroundColor: '#fff',
-        width: 300,
-        height: 100,
-        layout: 'horizontal'
-    },
-    childTemplates: [
-        {
-            tiProxy: {
-                className: 'org.appcelerator.titanium.proxy.TiImageViewProxy'
-            },
-            bindId: 'pic',
-            properties: {
-                width: 50,
-                height: 50,
-                left: 0
-            }
-        },
-        {
-            tiProxy: {
-                className: 'org.appcelerator.titanium.proxy.TiLabelProxy'
-            },
-            bindId: 'info',
-            properties: {
-                color: '#000',
-                font: { fontSize: 18, fontWeight: 'bold' },
-                left: 60,
-                top: 0
-            }
-        },
-        {
-            tiProxy: {
-                className: 'org.appcelerator.titanium.proxy.TiLabelProxy'
-            },
-            bindId: 'es_info',
-            properties: {
-                color: '#888',
-                font: { fontSize: 14 },
-                left: 60,
-                top: 25
-            }
-        }
-    ]
-}
-```
+Properties like `rect`, `size`, and `visibleText` may return empty or zero values immediately after cloning. The native Android view is created lazily when the proxy is added to a visible window. Actual values are populated once the view is rendered.
 
 ## Author
 
