@@ -1,101 +1,187 @@
-# Titanium SDK Module Project
+# ViewClone - Titanium Android Module
 
-This is a skeleton Titanium Mobile Mobile module project.
+Recursive deep cloning of `Ti.UI.View` objects with all properties and child views.
 
-## Module Naming
+## Overview
 
-Choose a unique module id for your module.  This ID usually follows a namespace
-convention using DNS notation.  For example, com.appcelerator.module.test.  This
-ID can only be used once by all public modules in Titanium.
+The Titanium SDK's built-in `TiViewProxy.clone()` shares the same V8/JavaScript wrapper (KrollObject) between the original and the clone, which prevents the clone from having its own independent JavaScript identity. ViewClone solves this by creating a truly independent clone — a new proxy instance of the same type, with all properties copied and all child views cloned recursively.
 
-## Getting Started
+## Installation
 
-1. Edit the `manifest` with the appropriate details about your module.
-2. Edit the `LICENSE` to add your license details.
-3. Place any assets (such as PNG files) that are required anywhere in the module folder.
-4. Edit the `timodule.xml` and configure desired settings.
-5. Code and build.
+### Option 1: Local module
 
-## Documentation
------------------------------
+1. Build the module:
 
-You should provide at least minimal documentation for your module in `documentation` folder using the Markdown syntax.
+   ```bash
+   cd android && ti build -p android --build-only
+   ```
 
-For more information on the Markdown syntax, refer to this documentation at:
+2. Copy the distribution zip into your app's `modules` directory:
 
-<http://daringfireball.net/projects/markdown/>
+   ```bash
+   unzip -o android/dist/de.marcbender.viewclone-android-1.0.0.zip -d /path/to/your/app/modules_temp
+   mv modules_temp/modules/android/de.marcbender.viewclone /path/to/your/app/modules/android/
+   rm -rf modules_temp
+   ```
 
-## Example
+### Option 2: Global installation
 
-The `example` directory contains a skeleton application test harness that can be
-used for testing and providing an example of usage to the users of your module.
+Copy the distribution zip into your Titanium modules directory:
 
-## Building
+- **Linux**: `~/.titanium/modules/android/de.marcbender.viewclone/1.0.0/`
+- **macOS**: `~/Library/Application Support/Titanium/modules/android/de.marcbender.viewclone/1.0.0/`
+- **Windows**: `C:\ProgramData\Titanium\modules\android\de.marcbender.viewclone\1.0.0\`
 
-Simply run `ti build -p [ios|android] --build-only` which will compile and package your module.
+### Register the module
 
-## Linting
+Add the module to your `tiapp.xml`:
 
-You can use `clang` to lint your code. A default linting style is included inside the module main folder.
-Run `clang-format -style=file -i SRC_FILE` in the module root to lint the `SRC_FILE`. You can also patterns,
-like `clang-format -style=file -i Classes/*`
-
-## Install
-
-To use your module locally inside an app you can copy the zip file into the app root folder and compile your app.
-The file will automatically be extracted and copied into the correct `modules/` folder.
-
-If you want to use your module globally in all your apps you have to do the following:
-
-### macOS
-
-Copy the distribution zip file into the `~/Library/Application Support/Titanium` folder
-
-### Linux
-
-Copy the distribution zip file into the `~/.titanium` folder
-
-### Windows
-Copy the distribution zip file into the `C:\ProgramData\Titanium` folder
-
-## Project Usage
-
-Register your module with your application by editing `tiapp.xml` and adding your module.
-Example:
-
+```xml
 <modules>
   <module version="1.0.0">de.marcbender.viewclone</module>
 </modules>
+```
 
-When you run your project, the compiler will combine your module along with its dependencies
-and assets into the application.
+## API
+
+### `cloneView(proxy)`
+
+Creates a deep clone of a `Ti.UI.View` proxy, including all properties and nested child views.
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `proxy` | `TiViewProxy` | The view proxy to clone |
+
+**Returns:** `TiViewProxy | null` — A new independent view proxy, or `null` if cloning fails.
+
+**What gets cloned:**
+
+- All properties (positioning, styling, layout, fonts, colors, etc.)
+- Child views — recursively cloned and added to the cloned parent
+- The view type (`apiName`) — the clone is the same Ti.UI type as the original
+
+**What does NOT get cloned:**
+
+- Event listeners — add new listeners to the clone as needed
 
 ## Example Usage
 
-To use your module in code, you will need to require it.
-
-### ES6+ (recommended)
-
 ```js
-import MyModule from 'de.marcbender.viewclone';
-MyModule.foo();
+const viewclone = require('de.marcbender.viewclone');
+
+// --- Clone a simple label ---
+const originalLabel = Ti.UI.createLabel({
+  text: 'Hello',
+  color: '#000',
+  font: { fontSize: 18, fontWeight: 'bold' },
+  top: 10,
+  left: 10,
+  width: 200,
+  height: 40,
+  backgroundColor: '#f00'
+});
+
+const clonedLabel = viewclone.cloneView(originalLabel);
+clonedLabel.text = 'Hello (clone)';
+clonedLabel.backgroundColor = '#0f0';
+win.add(clonedLabel);
+
+// --- Clone a complex layout with children ---
+const container = Ti.UI.createView({
+  top: 50,
+  width: 300,
+  height: 200,
+  backgroundColor: '#ddd',
+  layout: 'vertical',
+  borderRadius: 10,
+  borderWidth: 2,
+  borderColor: '#333'
+});
+
+const header = Ti.UI.createLabel({
+  text: 'Header',
+  color: '#fff',
+  backgroundColor: '#0066cc',
+  width: Ti.UI.FILL,
+  height: 40
+});
+
+const content = Ti.UI.createView({
+  width: Ti.UI.FILL,
+  height: 100,
+  layout: 'horizontal'
+});
+
+content.add(Ti.UI.createLabel({ text: 'Left', color: '#333' }));
+content.add(Ti.UI.createLabel({ text: 'Right', color: '#333' }));
+
+container.add(header);
+container.add(content);
+
+const clonedContainer = viewclone.cloneView(container);
+clonedContainer.backgroundColor = '#cfc';
+
+// Access cloned children via the .children property
+const children = clonedContainer.children;
+if (children && children.length > 0) {
+  children[0].text = 'Cloned Header';
+}
+
+win.add(clonedContainer);
+
+// --- Clone a button and add a new event listener ---
+const originalButton = Ti.UI.createButton({
+  title: 'Click me',
+  width: 200,
+  height: 50
+});
+
+originalButton.addEventListener('click', function () {
+  Ti.API.info('Original clicked');
+});
+
+const clonedButton = viewclone.cloneView(originalButton);
+clonedButton.title = 'Cloned button';
+
+// Event listeners are NOT cloned — add your own
+clonedButton.addEventListener('click', function () {
+  Ti.API.info('Clone clicked');
+});
+
+win.add(clonedButton);
 ```
 
-### ES5
+## Important Notes
+
+### Accessing children: use `.children`, not `.getChildren()`
+
+On cloned views, access child views using the **`.children` property**, not the `.getChildren()` method:
 
 ```js
-var MyModule = require('de.marcbender.viewclone');
-MyModule.foo();
+// Correct
+const children = clonedView.children;
+
+// Incorrect — this method is not available on cloned views
+const children = clonedView.getChildren();
 ```
 
-## Testing
+This is because `.children` is exposed via `@Kroll.getProperty` in the Titanium SDK, which maps it to a JavaScript property. The `getChildren()` method call form is not available on views created from the Java side.
 
-To test your module with the example, use:
+### Native view properties
 
-```js
-ti build -p [ios|android]
-```
+Properties like `rect`, `size`, and `visibleText` may return empty/zero values immediately after cloning because the native Android view is created lazily when the proxy is added to a visible window. The actual values will be populated once the view is rendered.
 
-This will execute the app.js in the example/ folder as a Titanium application.
+## Requirements
 
-Code strong!
+- Titanium SDK 13.2.0.GA or later
+- Android platform
+
+## License
+
+Apache Public License — see [LICENSE](LICENSE) for details.
+
+## Author
+
+Marc Bender
