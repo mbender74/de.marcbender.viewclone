@@ -1,0 +1,18 @@
+# Build artifacts
+android/build/
+android/dist/
+
+# Prebuilt module binaries in example app
+example/testApp/modules/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
