@@ -1,6 +1,10 @@
 # Build artifacts
 android/build/
 android/dist/
+ios/build/
+ios/dist/
+ios/metadata.json
+example/testApp/build/
 
 # Prebuilt module binaries in example app
 example/testApp/modules/
