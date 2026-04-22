@@ -2,17 +2,18 @@
 
 ## Description
 
-The ViewClone module enables efficient deep cloning of Titanium UI Views with recursive copying of all child views and properties. Cloning happens natively on the Android (Java) layer for maximum performance.
+The ViewClone module enables efficient deep cloning of Titanium UI Views with recursive copying of all child views and properties. Cloning happens natively on the Java (Android) or Objective-C (iOS) layer for maximum performance.
 
-Unlike the SDK's built-in `TiViewProxy.clone()`, which shares the same V8/JavaScript wrapper (KrollObject) between original and clone, ViewClone creates a truly independent clone with its own JavaScript identity.
+Unlike the SDK's built-in clone mechanism, which shares the same JavaScript wrapper between original and clone, ViewClone creates a truly independent clone with its own JavaScript identity.
 
 ## Features
 
 - **Recursive cloning**: Copies complex view hierarchies in full depth
 - **Property copy**: All Titanium properties are preserved
-- **Native performance**: Cloning executes on the Java layer for fast operation
+- **Native performance**: Cloning executes on the native layer for fast operation
+- **Cross-platform**: Supports both Android and iOS
 - **Compatibility**: Supports all Ti.UI.View types (View, Label, Button, ImageView, etc.)
-- **Independent identity**: Each clone gets its own V8 wrapper — no shared state with the original
+- **Independent identity**: Each clone gets its own JS wrapper — no shared state with the original
 
 ## Accessing the ViewClone Module
 
@@ -178,7 +179,7 @@ const children = clonedView.getChildren();
 
 ### Native view properties
 
-Properties like `rect`, `size`, and `visibleText` may return empty or zero values immediately after cloning. The native Android view is created lazily when the proxy is added to a visible window. Actual values are populated once the view is rendered.
+Properties like `rect`, `size`, and `visibleText` may return empty or zero values immediately after cloning. The native view is created lazily when the proxy is added to a visible window. Actual values are populated once the view is rendered.
 
 ## Author
 

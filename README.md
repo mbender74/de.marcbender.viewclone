@@ -1,26 +1,36 @@
-# ViewClone - Titanium Android Module
+# ViewClone - Titanium Module
 
-Recursive deep cloning of `Ti.UI.View` objects with all properties and child views.
+Recursive deep cloning of `Ti.UI.View` objects with all properties and child views, for both Android and iOS.
 
 ## Overview
 
-The Titanium SDK's built-in `TiViewProxy.clone()` shares the same V8/JavaScript wrapper (KrollObject) between the original and the clone, which prevents the clone from having its own independent JavaScript identity. ViewClone solves this by creating a truly independent clone — a new proxy instance of the same type, with all properties copied and all child views cloned recursively.
+The Titanium SDK's built-in clone mechanism shares the same JavaScript wrapper between the original and the clone, which prevents the clone from having its own independent JavaScript identity. On Android, `TiViewProxy.clone()` shares the same V8/KrollObject wrapper. ViewClone solves this by creating a truly independent clone — a new proxy instance of the same type, with all properties copied and all child views cloned recursively.
 
 ## Installation
 
 ### Option 1: Local module
 
-1. Build the module:
+1. Build the module for your platform:
 
    ```bash
+   # Android
    cd android && ti build -p android --build-only
+
+   # iOS
+   cd ios && ti build -p ios --build-only
    ```
 
 2. Copy the distribution zip into your app's `modules` directory:
 
    ```bash
+   # Android
    unzip -o android/dist/de.marcbender.viewclone-android-1.0.0.zip -d /path/to/your/app/modules_temp
    mv modules_temp/modules/android/de.marcbender.viewclone /path/to/your/app/modules/android/
+   rm -rf modules_temp
+
+   # iOS
+   unzip -o ios/dist/de.marcbender.viewclone-iphone-1.0.0.zip -d /path/to/your/app/modules_temp
+   mv modules_temp/modules/iphone/de.marcbender.viewclone /path/to/your/app/modules/iphone/
    rm -rf modules_temp
    ```
 
@@ -28,9 +38,9 @@ The Titanium SDK's built-in `TiViewProxy.clone()` shares the same V8/JavaScript 
 
 Copy the distribution zip into your Titanium modules directory:
 
-- **Linux**: `~/.titanium/modules/android/de.marcbender.viewclone/1.0.0/`
-- **macOS**: `~/Library/Application Support/Titanium/modules/android/de.marcbender.viewclone/1.0.0/`
-- **Windows**: `C:\ProgramData\Titanium\modules\android\de.marcbender.viewclone\1.0.0\`
+- **Linux**: `~/.titanium/modules/`
+- **macOS**: `~/Library/Application Support/Titanium/modules/`
+- **Windows**: `C:\ProgramData\Titanium\modules/`
 
 ### Register the module
 
@@ -38,7 +48,7 @@ Add the module to your `tiapp.xml`:
 
 ```xml
 <modules>
-  <module platform="android" version="1.0.0">de.marcbender.viewclone</module>
+  <module version="1.0.0">de.marcbender.viewclone</module>
 </modules>
 ```
 
@@ -167,16 +177,16 @@ const children = clonedView.children;
 const children = clonedView.getChildren();
 ```
 
-This is because `.children` is exposed via `@Kroll.getProperty` in the Titanium SDK, which maps it to a JavaScript property. The `getChildren()` method call form is not available on views created from the Java side.
+This is because `.children` is exposed via `@Kroll.getProperty` in the Titanium SDK, which maps it to a JavaScript property. The `getChildren()` method call form is not available on views created from the native side.
 
 ### Native view properties
 
-Properties like `rect`, `size`, and `visibleText` may return empty/zero values immediately after cloning because the native Android view is created lazily when the proxy is added to a visible window. The actual values will be populated once the view is rendered.
+Properties like `rect`, `size`, and `visibleText` may return empty/zero values immediately after cloning because the native view is created lazily when the proxy is added to a visible window. The actual values will be populated once the view is rendered.
 
 ## Requirements
 
 - Titanium SDK 13.2.0.GA or later
-- Android platform
+- Android and/or iOS platform
 
 ## License
 
