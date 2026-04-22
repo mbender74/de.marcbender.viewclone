@@ -181,7 +181,7 @@ This is because `.children` is exposed via `@Kroll.getProperty` in the Titanium 
 
 ### Native view properties
 
-Properties like `rect`, `size`, and `visibleText` may return empty/zero values immediately after cloning because the native view is created lazily when the proxy is added to a visible window. The actual values will be populated once the view is rendered.
+Properties like `rect` and `size` may return zero values immediately after cloning because the native view is created lazily when the proxy is added to a visible window. The actual values will be populated once the view is rendered.
 
 ## Screenshots
 
