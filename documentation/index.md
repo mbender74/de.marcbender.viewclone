@@ -183,6 +183,10 @@ Properties like `rect`, `size`, and `visibleText` may return empty or zero value
 
 ## Screenshots
 
+### Android
+
+![Android Screenshot](android-screenshot.png)
+
 ### iOS
 
 ![iOS Screenshot](ios-screenshot.png)
