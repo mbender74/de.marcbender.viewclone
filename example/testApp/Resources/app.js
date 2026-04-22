@@ -1,5 +1,5 @@
-// Test-Harness für ViewClone Module
-// Zeigt rekursives Klonen von komplexen Ti.UI.Views
+// Test harness for ViewClone Module
+// Demonstrates recursive deep cloning of complex Ti.UI.Views
 
 // open a single window
 const win = Ti.UI.createWindow({
@@ -12,13 +12,15 @@ const scrollView = Ti.UI.createScrollView({
 	showVerticalScrollIndicator: true,
 	showHorizontalScrollIndicator: true,
 	layout: 'vertical',
-	height: '100%',
-	width: '100%'
+	contentHeight:'auto',
+	showVerticalScrollIndicator:true,
+	height: Ti.UI.FILL,
+	width: Ti.UI.FILL
 });
 
-// Label für Ergebnisanzeige
+// Label for result display
 const label = Ti.UI.createLabel({
-	top: 20,
+	top: 60,
 	left: 20,
 	right: 20,
 	font: { fontSize: 16, fontWeight: 'bold' },
@@ -30,11 +32,11 @@ scrollView.add(label);
 const viewclone = require('de.marcbender.viewclone');
 Ti.API.info("module loaded");
 
-label.text = "ViewClone Module geladen\n";
+label.text = "ViewClone Module loaded\n";
 
-// Test 1: Einfaches Label klonen
+// Test 1: Clone a simple label
 function testSimpleLabel() {
-	Ti.API.info("Test 1: Einfaches Label klonen");
+	Ti.API.info("Test 1: Clone a simple label");
 
 	const originalLabel = Ti.UI.createLabel({
 		text: 'Original Label',
@@ -53,21 +55,21 @@ function testSimpleLabel() {
 	if (clonedLabel) {
 		Ti.API.info("Cloned label text: " + clonedLabel.text);
 		Ti.API.info("Cloned label color: " + clonedLabel.color);
-		clonedLabel.text = 'Kloned Label';
+		clonedLabel.text = 'Cloned Label';
 		clonedLabel.backgroundColor = '#0f0';
 		clonedLabel.top = 20;
 		scrollView.add(clonedLabel);
-		Ti.API.info("Einfaches Label erfolgreich geklont");
-		label.text += "Test 1: Einfaches Label - OK\n";
+		Ti.API.info("Simple label cloned successfully");
+		label.text += "Test 1: Simple Label - OK\n";
 	} else {
-		Ti.API.error("Fehler beim Klonen des Labels");
-		label.text += "Test 1: Einfaches Label - FEHLER\n";
+		Ti.API.error("Failed to clone label");
+		label.text += "Test 1: Simple Label - ERROR\n";
 	}
 }
 
-// Test 2: Komplexes Layout mit Kind-Views
+// Test 2: Clone a complex layout with child views
 function testComplexLayout() {
-	Ti.API.info("Test 2: Komplexes Layout mit Kind-Views klonen");
+	Ti.API.info("Test 2: Clone a complex layout with child views");
 
 	const originalContainer = Ti.UI.createView({
 		top: 20,
@@ -81,7 +83,7 @@ function testComplexLayout() {
 		borderColor: '#333'
 	});
 
-	// Kind-Views hinzufügen
+	// Add child views
 	const header = Ti.UI.createLabel({
 		text: 'Header',
 		color: '#fff',
@@ -120,58 +122,54 @@ function testComplexLayout() {
 
 	scrollView.add(originalContainer);
 
-	// Klonen des komplexen Layouts
+	// Clone the complex layout
 	const clonedContainer = viewclone.cloneView(originalContainer);
 	if (clonedContainer) {
 		clonedContainer.top = 20;
 		clonedContainer.left = 20;
 		clonedContainer.backgroundColor = '#cfc';
-		Ti.API.info("Komplexes Layout erfolgreich geklont");
+		Ti.API.info("Complex layout cloned successfully");
 
-		// Kinder des Clones prüfen (children Property, nicht getChildren() Methode)
+		// Check cloned children (use .children property, not .getChildren() method)
 		const children = clonedContainer.children;
 		Ti.API.info("Cloned container children count: " + (children ? children.length : 0));
 
 		if (children && children.length > 0) {
-			// Header ändern
+			// Modify header
 			if (children[0]) {
 				Ti.API.info("First child apiName: " + children[0].apiName);
 				Ti.API.info("First child text: " + children[0].text);
-				children[0].text = 'Kloned Header';
+				children[0].text = 'Cloned Header';
 			}
 
-			// Content-Kinder prüfen
+			// Check content children
 			if (children[1] && children[1].children) {
 				const labels = children[1].children;
 
 				Ti.API.info("Content children count: " + children[1].children.length);
-				
-				Ti.API.info("First child apiName: " + children[0].apiName);
-				Ti.API.info("First child text: " + children[0].text);
-				children[0].text = 'Kloned Header';
 
 				Ti.API.info("First child apiName: " + labels[0].apiName);
 				Ti.API.info("First child text: " + labels[0].text);
-				labels[0].text = 'Kloned text 1';
+				labels[0].text = 'Cloned text 1';
 
 				Ti.API.info("Second child apiName: " + labels[1].apiName);
 				Ti.API.info("Second child text: " + labels[1].text);
-				labels[1].text = 'Kloned text 2';
+				labels[1].text = 'Cloned text 2';
 
 			}
 		}
 
 		scrollView.add(clonedContainer);
-		label.text += "Test 2: Komplexes Layout - OK\n";
+		label.text += "Test 2: Complex Layout - OK\n";
 	} else {
-		Ti.API.error("Fehler beim Klonen des komplexen Layouts");
-		label.text += "Test 2: Komplexes Layout - FEHLER\n";
+		Ti.API.error("Failed to clone complex layout");
+		label.text += "Test 2: Complex Layout - ERROR\n";
 	}
 }
 
-// Test 3: View mit EventListener klonen
-function testViewWithEvents() {
-	Ti.API.info("Test 3: View mit EventListener klonen");
+// Test 3: Clone a view
+function testView() {
+	Ti.API.info("Test 3: Clone a view");
 
 	const originalButton = Ti.UI.createButton({
 		title: 'Original Button',
@@ -186,111 +184,42 @@ function testViewWithEvents() {
 	let clickCount = 0;
 	originalButton.addEventListener('click', function(e) {
 		clickCount++;
-		Ti.API.info("Original Button geklickt: " + clickCount);
+		Ti.API.info("Original Button clicked: " + clickCount);
 
 
 		const clonedButton = viewclone.cloneView(originalButton);
 		if (clonedButton) {
-			clonedButton.title = 'Kloned Button';
+			clonedButton.title = 'Cloned Button '+clickCount;
 			clonedButton.backgroundColor = '#66cc00';
 			clonedButton.top = 20;
-	
-			// EventListener für den Klon hinzufügen
+			clonedButton.count = clickCount;
+
+			// Add event listener to the clone
 			clonedButton.addEventListener('click', function(e) {
-				alert("Kloned Button geklickt");
+				alert("Cloned Button "+e.source.count+" clicked");
 			});
-	
+
 			scrollView.add(clonedButton);
-			Ti.API.info("View mit EventListener erfolgreich geklont");
-			label.text += "Test 3: View mit Events - OK\n";
+			Ti.API.info("View with event listener cloned successfully");
+			label.text += "Test 3: Clone View - OK\n";
 		} else {
-			Ti.API.error("Fehler beim Klonen der View mit Events");
-			label.text += "Test 3: View mit Events - FEHLER\n";
+			Ti.API.error("Failed to clone view");
+			label.text += "Test 3: Clone View - ERROR\n";
 		}
 	});
 
 	scrollView.add(originalButton);
 }
 
-// Alle Tests ausführen
+// Run all tests
 testSimpleLabel();
 testComplexLayout();
-testViewWithEvents();
+testView();
 
-// Abschlussnachricht
-label.text += "\nAlle Tests ausgeführt!\n";
+// Completion message
+label.text += "\nAll tests executed!\n";
 
 
 win.add(scrollView);
-
-
-// // generate random number, used to make each row appear distinct for this example
-// function randomInt(max){
-//   return Math.floor(Math.random() * max) + 1;
-// }
-
-// var IMG_BASE = 'assets/images/';
-// var defaultFontSize = Ti.Platform.name === 'android' ? 16 : 14;
-
-// var tableData = [];
-
-// for (var i=1; i<=120; i++){
-//   var row = Ti.UI.createTableViewRow({
-//     className: 'forumEvent', // used to improve table performance
-//     backgroundSelectedColor: 'white',
-//     rowIndex: i, // custom property, useful for determining the row during events
-//     height: 110
-//   });
-
-//   var imageAvatar = Ti.UI.createImageView({
-//     image: IMG_BASE + 'tab1.png',
-//     left: 10, top: 5,
-//     width: 50, height: 50
-//   });
-//   row.add(imageAvatar);
-
-//   var labelUserName = Ti.UI.createLabel({
-//     color: '#576996',
-//     font: {fontFamily:'Arial', fontSize: defaultFontSize+6, fontWeight: 'bold'},
-//     text: 'Fred Smith ' + i,
-//     left: 70, top: 6,
-//     width: 200, height: 30
-//   });
-//   row.add(labelUserName);
-
-//   var labelDetails = Ti.UI.createLabel({
-//     color: '#222',
-//     font: {fontFamily:'Arial', fontSize: defaultFontSize+2, fontWeight: 'normal'},
-//     text: 'Replied to post with id ' + randomInt(1000) + '.',
-//     left: 70, top: 44,
-//     width: 360
-//   });
-//   row.add(labelDetails);
-
-//   var imageCalendar = Ti.UI.createImageView({
-//     image: IMG_BASE + 'tab2.png',
-//     left: 70, bottom: 2,
-//     width: 32, height: 32
-//   });
-//   row.add(imageCalendar);
-
-//   var labelDate = Ti.UI.createLabel({
-//     color: '#999',
-//     font: {fontFamily:'Arial', fontSize: defaultFontSize, fontWeight: 'normal'},
-//     text: 'on ' + randomInt(30) + ' Nov 2012',
-//     left: 105, bottom: 10,
-//     width: 200, height: 20
-//   });
-//   row.add(labelDate);
-
-//   tableData.push(row);
-// }
-
-// var tableView = Ti.UI.createTableView({
-//   backgroundColor: 'white',
-//   data: tableData
-// });
-
-// win.add(tableView);
 
 win.open();
