@@ -13,6 +13,8 @@ example/testApp/modules/
 .idea/
 *.iml
 .vscode/
+*.xcworkspace/
+xcuserdata/
 
 # OS
 .DS_Store

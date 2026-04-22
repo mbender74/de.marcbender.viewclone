@@ -187,11 +187,11 @@ Properties like `rect`, `size`, and `visibleText` may return empty/zero values i
 
 ### Android
 
-![Android Screenshot](documentation/android-screenshot.png)
+![Android Screenshot](./documentation/android-screenshot.png)
 
 ### iOS
 
-![iOS Screenshot](documentation/ios-screenshot.png)
+![iOS Screenshot](./documentation/ios-screenshot.png)
 
 ## Requirements
 
