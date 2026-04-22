@@ -183,6 +183,12 @@ This is because `.children` is exposed via `@Kroll.getProperty` in the Titanium 
 
 Properties like `rect`, `size`, and `visibleText` may return empty/zero values immediately after cloning because the native view is created lazily when the proxy is added to a visible window. The actual values will be populated once the view is rendered.
 
+## Screenshots
+
+### iOS
+
+![iOS Screenshot](documentation/ios-screenshot.png)
+
 ## Requirements
 
 - Titanium SDK 13.2.0.GA or later

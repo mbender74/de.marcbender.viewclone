@@ -181,6 +181,12 @@ const children = clonedView.getChildren();
 
 Properties like `rect`, `size`, and `visibleText` may return empty or zero values immediately after cloning. The native view is created lazily when the proxy is added to a visible window. Actual values are populated once the view is rendered.
 
+## Screenshots
+
+### iOS
+
+![iOS Screenshot](ios-screenshot.png)
+
 ## Author
 
 **Marc Bender**
