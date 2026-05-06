@@ -19,6 +19,8 @@ import org.appcelerator.kroll.common.TiConfig;
 
 import android.app.Activity;
 import java.lang.ref.WeakReference;
+import java.util.HashSet;
+import java.util.Set;
 
 import java.lang.reflect.Constructor;
 import java.util.concurrent.ConcurrentHashMap;
@@ -42,22 +44,13 @@ public class ViewCloneModule extends KrollModule
 		Log.d(LCAT, "Module initialized");
 	}
 
-	/**
-	 * Klonen einer TiUIView mit allen Properties und Kind-Views.
-	 *
-	 * Erstellt einen neuen Proxy desselben Typs wie das Original, kopiert
-	 * alle Properties und klont die Kinder rekursiv.
-	 *
-	 * WICHTIG: In JavaScript verwenden Sie .children (Property), nicht .getChildren() (Methode).
-	 * Beispiel: const children = clonedView.children;
-	 *
-	 * @param proxy Das zu klonende TiViewProxy
-	 * @return Das geklonte TiViewProxy oder null bei Fehler
-	 */
 	// Cache für Constructor-Objekte - Vermeidet wiederholte Reflection-Aufrufe
 	// WeakReference-Map ermöglicht GC des Caches wenn nötig
-	private static final Map<Class<? extends TiViewProxy>, Constructor<? extends TiViewProxy>> CONSTRUCTOR_CACHE 
+	private static final Map<Class<? extends TiViewProxy>, Constructor<? extends TiViewProxy>> CONSTRUCTOR_CACHE
 		= new ConcurrentHashMap<>();
+
+	// Set zur Erkennung von Zirkelbeziehungen - Vermeidet StackOverflow bei recursive references
+	private static final Set<TiViewProxy> CLONING_IN_PROGRESS = new HashSet<>();
 
 	// WeakReference für Activity-Referenzen - Vermeidet Memory-Leaks durch starke References
 	private final Map<TiViewProxy, WeakReference<Activity>> activityRefCache = new ConcurrentHashMap<>();
@@ -70,12 +63,12 @@ public class ViewCloneModule extends KrollModule
 			Log.e(LCAT, "cloneView: proxy is null");
 			return null;
 		}
-		
+
 		if (!(proxy instanceof TiViewProxy)) {
 			Log.e(LCAT, "Invalid proxy type: " + proxy.getClass().getName());
 			return null;
 		}
-		
+
 		Log.d(LCAT, "Cloning view: " + proxy.getClass().getSimpleName());
 
 		try {
@@ -92,61 +85,79 @@ public class ViewCloneModule extends KrollModule
 	 * Erstellt eine neue Instanz desselben Proxy-Typs, kopiert die Properties
 	 * und klont die Kinder rekursiv. Der V8 JavaScript-Wrapper wird automatisch
 	 * erstellt, wenn der Proxy an JavaScript zurückgegeben wird.
+	 *
+	 * Zirkelbeziehungs-Erkennung: Vermeidet StackOverflow bei recursive references
+	 * (z.B. wenn ein Child eine Referenz auf den Parent enthält).
 	 */
 	private TiViewProxy cloneProxy(TiViewProxy proxy) throws Exception
 	{
 		Log.d(LCAT, "Creating new instance of: " + proxy.getClass().getSimpleName());
-		
-		// Constructor aus Cache holen oder erstellen
-		Constructor<? extends TiViewProxy> constructor = getConstructor(proxy.getClass());
-		
-		// Neue Proxy-Instanz aus dem cached Constructor erstellen
-		TiViewProxy clonedProxy = constructor.newInstance();
 
-		// Properties kopieren und den Proxy initialisieren
-		KrollDict props = proxy.getProperties();
-		if (props != null && !props.isEmpty()) {
-			KrollDict propsCopy = new KrollDict(props);
-			clonedProxy.handleCreationArgs(null, new Object[] { propsCopy });
-		} else {
-			clonedProxy.handleCreationArgs(null, new Object[0]);
+		// Zirkelbeziehungs-Erkennung - Vermeidet StackOverflow
+		if (CLONING_IN_PROGRESS.contains(proxy)) {
+			Log.w(LCAT, "Circular reference detected: " + proxy.getClass().getSimpleName() + " - skipping");
+			return null;
 		}
 
-		// Creation-URL übernehmen
-		if (proxy.getCreationUrl() != null && proxy.getCreationUrl().url != null) {
-			clonedProxy.setCreationUrl(proxy.getCreationUrl().url);
-		}
+		// Zum Set hinzufügen - Markiert Proxy als "wird geklont"
+		CLONING_IN_PROGRESS.add(proxy);
 
-		// Activity als WeakReference speichern - Vermeidet Memory-Leaks
-		Activity activity = proxy.getActivity();
-		if (activity != null) {
-			activityRefCache.put(clonedProxy, new WeakReference<>(activity));
-			clonedProxy.setActivity(activity);
-		}
+		try {
+			// Constructor aus Cache holen oder erstellen
+			Constructor<? extends TiViewProxy> constructor = getConstructor(proxy.getClass());
 
-		// Kinder rekursiv klonen
-		TiViewProxy[] children = proxy.getChildren();
-		if (children != null && children.length > 0) {
-			for (TiViewProxy child : children) {
-				if (child == null) {
-					continue;
-				}
-				TiViewProxy clonedChild = cloneProxy(child);
-				if (clonedChild != null) {
-					clonedProxy.add(clonedChild);
-				} else {
-					Log.w(LCAT, "Failed to clone child: " + child.getClass().getSimpleName());
+			// Neue Proxy-Instanz aus dem cached Constructor erstellen
+			TiViewProxy clonedProxy = constructor.newInstance();
+
+			// Properties kopieren und den Proxy initialisieren
+			KrollDict props = proxy.getProperties();
+			if (props != null && !props.isEmpty()) {
+				KrollDict propsCopy = new KrollDict(props);
+				clonedProxy.handleCreationArgs(null, new Object[] { propsCopy });
+			} else {
+				clonedProxy.handleCreationArgs(null, new Object[0]);
+			}
+
+			// Creation-URL übernehmen
+			if (proxy.getCreationUrl() != null && proxy.getCreationUrl().url != null) {
+				clonedProxy.setCreationUrl(proxy.getCreationUrl().url);
+			}
+
+			// Activity als WeakReference speichern - Vermeidet Memory-Leaks
+			Activity activity = proxy.getActivity();
+			if (activity != null) {
+				activityRefCache.put(clonedProxy, new WeakReference<>(activity));
+				clonedProxy.setActivity(activity);
+			}
+
+			// Kinder rekursiv klonen
+			TiViewProxy[] children = proxy.getChildren();
+			if (children != null && children.length > 0) {
+				for (TiViewProxy child : children) {
+					if (child == null) {
+						continue;
+					}
+					TiViewProxy clonedChild = cloneProxy(child);
+					if (clonedChild != null) {
+						clonedProxy.add(clonedChild);
+					} else {
+						Log.w(LCAT, "Failed to clone child: " + child.getClass().getSimpleName() + " (circular or error)");
+					}
 				}
 			}
-		}
 
-		return clonedProxy;
+			return clonedProxy;
+
+		} finally {
+			// Vom Set entfernen - Freigabe für zukünftige Clones
+			CLONING_IN_PROGRESS.remove(proxy);
+		}
 	}
 
 	/**
 	 * Thread-sicherer Constructor-Caching-Mechanismus.
 	 * Vermeidet wiederholte Reflection-Aufrufe für den gleichen Proxy-Typ.
-	 * 
+	 *
 	 * @param proxyClass Die Proxy-Klasse
 	 * @return Der cached Constructor
 	 * @throws Exception Falls Constructor nicht erstellt werden kann
@@ -155,14 +166,14 @@ public class ViewCloneModule extends KrollModule
 	private Constructor<? extends TiViewProxy> getConstructor(Class<? extends TiViewProxy> proxyClass) throws Exception {
 		// Cache lookup
 		Constructor<? extends TiViewProxy> constructor = (Constructor<? extends TiViewProxy>)(Object) CONSTRUCTOR_CACHE.get(proxyClass);
-		
+
 		if (constructor == null) {
 			// Constructor erstellen und im Cache speichern
 			constructor = (Constructor<? extends TiViewProxy>)(Object) proxyClass.getDeclaredConstructor();
 			CONSTRUCTOR_CACHE.put(proxyClass, constructor);
 			Log.d(LCAT, "Cached new constructor for: " + proxyClass.getSimpleName());
 		}
-		
+
 		return constructor;
 	}
 
@@ -174,12 +185,13 @@ public class ViewCloneModule extends KrollModule
 	public void clearCache() {
 		CONSTRUCTOR_CACHE.clear();
 		activityRefCache.clear();
+		CLONING_IN_PROGRESS.clear();
 		Log.d(LCAT, "Memory caches cleared");
 	}
 
 	/**
 	 * Gibt die Anzahl der gecachten Constructor-Objekte zurück.
-	 * 
+	 *
 	 * @return Anzahl der Einträge im Constructor-Cache
 	 */
 	@Kroll.method

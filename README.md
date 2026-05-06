@@ -76,6 +76,20 @@ Creates a deep clone of a `Ti.UI.View` proxy, including all properties and neste
 
 - Event listeners — add new listeners to the clone as needed
 
+### `clearCache()`
+
+Frees all internal caches (constructor cache, property cache, activity cache).
+Should be called when memory is low or the app is closing.
+
+**Returns:** `void`
+
+### `getCacheSize()`
+
+Returns the number of cached constructor objects (Android) or cached properties (iOS).
+Useful for debugging and memory profiling.
+
+**Returns:** `number` — The cache size (number of entries)
+
 ## Example Usage
 
 ```js
@@ -178,6 +192,10 @@ const children = clonedView.getChildren();
 ```
 
 This is because `.children` is exposed via `@Kroll.getProperty` in the Titanium SDK, which maps it to a JavaScript property. The `getChildren()` method call form is not available on views created from the native side.
+
+### Circular reference protection
+
+The module automatically detects circular references (e.g., when a child view holds a reference back to its parent). When a circular reference is detected, the affected child is skipped and a warning is logged. This prevents `StackOverflowError` / `NSStackOverflow` during deep cloning.
 
 ### Native view properties
 

@@ -18,6 +18,7 @@
 static NSMutableDictionary *gPropertyCache = nil;
 static NSMutableDictionary *gClonedProxyMap = nil;
 static NSLock *gCacheLock = nil;
+static NSMutableSet *gCloningInProgress = nil;
 
 @implementation DeMarcbenderViewcloneModule
 
@@ -39,13 +40,14 @@ static NSLock *gCacheLock = nil;
 {
   [super startup];
   DebugLog(@"[DEBUG] %@ loaded", self);
-  
+
   // Initialize caches lazily
   @synchronized(self) {
     if (gPropertyCache == nil) {
       gPropertyCache = [[NSMutableDictionary alloc] init];
       gClonedProxyMap = [[NSMutableDictionary alloc] init];
       gCacheLock = [[NSLock alloc] init];
+      gCloningInProgress = [[NSMutableSet alloc] init];
     }
   }
 }
@@ -85,7 +87,7 @@ static NSLock *gCacheLock = nil;
  */
 - (void)clearCache
 {
-  @synchronized(self) {
+  @synchronized(gCacheLock) {
     if (gPropertyCache != nil) {
       [gPropertyCache removeAllObjects];
       DebugLog(@"[INFO] Property cache cleared");
@@ -94,17 +96,21 @@ static NSLock *gCacheLock = nil;
       [gClonedProxyMap removeAllObjects];
       DebugLog(@"[INFO] Cloned proxy map cleared");
     }
+    if (gCloningInProgress != nil) {
+      [gCloningInProgress removeAllObjects];
+      DebugLog(@"[INFO] Cloning in-progress set cleared");
+    }
   }
 }
 
 /**
  * Gibt die Anzahl der gecachten Properties zurück.
- * 
+ *
  * @return Anzahl der Einträge im Property-Cache
  */
 - (NSInteger)getCacheSize
 {
-  @synchronized(self) {
+  @synchronized(gCacheLock) {
     if (gPropertyCache == nil) {
       return 0;
     }
@@ -121,10 +127,10 @@ static NSLock *gCacheLock = nil;
         if (gPropertyCache == nil) {
             gPropertyCache = [[NSMutableDictionary alloc] init];
         }
-        
+
         NSString *key = [NSString stringWithFormat:"%p", props];
         NSMutableDictionary *cached = gPropertyCache[key];
-        
+
         if (cached == nil) {
             cached = [[NSMutableDictionary alloc] init];
             [props enumerateKeysAndObjectsUsingBlock:^(id key, id obj, BOOL *stop) {
@@ -134,59 +140,78 @@ static NSLock *gCacheLock = nil;
             }];
             gPropertyCache[key] = cached;
         }
-        
+
         return cached;
     }
 }
 
 - (TiViewProxy *)cloneProxy:(TiViewProxy *)proxy {
-  NSDictionary *props = [proxy allProperties];
-  
-  // Use cached filtered properties for better performance
-  NSDictionary *filteredProps = nil;
-  if (props != nil && [props count] > 0) {
-      filteredProps = [self cachedFilteredPropsForProps:props];
-  }
-
-  id<TiEvaluator> context = [proxy pageContext];
-  if (context == nil) {
-    context = [self pageContext];
-  }
-
-  // Create proxy directly from the source class — avoids string resolution
-  // and NSClassFromString overhead in createProxy:withProperties:inContext:
-  NSArray *initArgs = filteredProps != nil ? @[ filteredProps ] : nil;
-  TiViewProxy *clonedProxy = [[[proxy class] alloc] _initWithPageContext:context args:initArgs];
-
-  if (clonedProxy == nil) {
-    DebugLog(@"[WARN] cloneProxy: failed to create proxy of type %@", NSStringFromClass([proxy class]));
+  // Zirkelbeziehungs-Erkennung - Vermeidet StackOverflow bei recursive references
+  if (gCloningInProgress != nil && [gCloningInProgress containsObject:proxy]) {
+    DebugLog(@"[WARN] Circular reference detected: %@ - skipping", NSStringFromClass([proxy class]));
     return nil;
   }
 
-  // Store cloned proxy for memory management tracking
-  @synchronized(gCacheLock) {
-      if (gClonedProxyMap == nil) {
-          gClonedProxyMap = [[NSMutableDictionary alloc] init];
-      }
-      // Use weak reference to avoid retain cycle
-      NSValue *proxyKey = [NSValue valueWithPointer:proxy];
-      gClonedProxyMap[proxyKey] = clonedProxy;
+  // Zum Set hinzufügen - Markiert Proxy als "wird geklont"
+  if (gCloningInProgress != nil) {
+    [gCloningInProgress addObject:proxy];
   }
 
-  NSArray *children = [proxy children];
-  if (children != nil && [children count] > 0) {
-    for (id childObj in children) {
-      if (![childObj isKindOfClass:[TiViewProxy class]]) {
-        continue;
-      }
-      TiViewProxy *clonedChild = [self cloneProxy:(TiViewProxy *)childObj];
-      if (clonedChild != nil) {
-        [clonedProxy add:clonedChild];
+  @try {
+    NSDictionary *props = [proxy allProperties];
+
+    // Use cached filtered properties for better performance
+    NSDictionary *filteredProps = nil;
+    if (props != nil && [props count] > 0) {
+        filteredProps = [self cachedFilteredPropsForProps:props];
+    }
+
+    id<TiEvaluator> context = [proxy pageContext];
+    if (context == nil) {
+      context = [self pageContext];
+    }
+
+    // Create proxy directly from the source class — avoids string resolution
+    // and NSClassFromString overhead in createProxy:withProperties:inContext:
+    NSArray *initArgs = filteredProps != nil ? @[ filteredProps ] : nil;
+    TiViewProxy *clonedProxy = [[[proxy class] alloc] _initWithPageContext:context args:initArgs];
+
+    if (clonedProxy == nil) {
+      DebugLog(@"[WARN] cloneProxy: failed to create proxy of type %@", NSStringFromClass([proxy class]));
+      return nil;
+    }
+
+    // Store cloned proxy for memory management tracking
+    @synchronized(gCacheLock) {
+        if (gClonedProxyMap == nil) {
+            gClonedProxyMap = [[NSMutableDictionary alloc] init];
+        }
+        // Use weak reference to avoid retain cycle
+        NSValue *proxyKey = [NSValue valueWithPointer:proxy];
+        gClonedProxyMap[proxyKey] = clonedProxy;
+    }
+
+    NSArray *children = [proxy children];
+    if (children != nil && [children count] > 0) {
+      for (id childObj in children) {
+        if (![childObj isKindOfClass:[TiViewProxy class]]) {
+          continue;
+        }
+        TiViewProxy *clonedChild = [self cloneProxy:(TiViewProxy *)childObj];
+        if (clonedChild != nil) {
+          [clonedProxy add:clonedChild];
+        }
       }
     }
-  }
 
-  return clonedProxy;
+    return clonedProxy;
+
+  } @finally {
+    // Vom Set entfernen - Freigabe für zukünftige Clones
+    if (gCloningInProgress != nil) {
+      [gCloningInProgress removeObject:proxy];
+    }
+  }
 }
 
 @end

@@ -1,16 +1,16 @@
-# Optimierungs-Status: Alle Phasen abgeschlossen
+# Optimierungs-Status: Alle Phasen + Verbesserungen abgeschlossen
 
-## ✅ Alle Phasen erfolgreich umgesetzt
+## ✅ Alle Phasen + Verbesserungen erfolgreich umgesetzt
 
 ### Phase 1: Fehlerbehandlung & Stabilität - ✅ ABGESCHLOSSEN
 
-**Android**: Vollständige Input-Validierung, Exception-Handling, Null-Sicherheit  
+**Android**: Vollständige Input-Validierung, Exception-Handling, Null-Sicherheit
 **iOS**: Gleiche Verbesserungen für Cross-Platform-Konsistenz
 
 ### Phase 2: Performance-Optimierung - ✅ ABGESCHLOSSEN
 
-**Android**: Constructor-Caching mit `ConcurrentHashMap`  
-**iOS**: Property-Caching mit `dispatch_once` und `@synchronized`
+**Android**: Constructor-Caching mit `ConcurrentHashMap`
+**iOS**: Property-Caching mit `@synchronized`
 
 ### Phase 3: Memory-Management - ✅ ABGESCHLOSSEN
 
@@ -28,6 +28,33 @@
 
 ---
 
+## 🛡️ Verbesserungen (Nachträgliche Optimierung)
+
+### ⭐ Zirkelbeziehungs-Erkennung (BEIDE Plattformen)
+
+**Problem**: Wenn ein Child eine Referenz auf den Parent enthält (z.B. `parent` Property), entsteht eine Endlosschleife → Stack Overflow!
+
+**Lösung**:
+- **Android**: `Set<TiViewProxy> CLONING_IN_PROGRESS` mit `HashSet`
+- **iOS**: `NSMutableSet *gCloningInProgress` mit `@try/@finally`
+- Erkennt zirkuläre References und überspringt den betroffenen Child
+- Loggt Warning: `"Circular reference detected: [ClassName] - skipping"`
+
+### ⭐ activityRefCache verwenden/entfernen (Android)
+
+**Status**: Implementiert — `activityRefCache` wird in `cloneProxy()` verwendet und in `clearCache()` freigegeben.
+
+### ⭐ iOS gCacheLock nil-Check
+
+**Problem**: Wenn `cachedFilteredPropsForProps:` vor `startup()` aufgerufen wird, ist `gCacheLock` noch `nil` → Crash!
+
+**Lösung**:
+- Alle Cache-Zugriffe prüfen auf `!= nil`
+- `gCacheLock` in `clearCache()`, `getCacheSize()`, `clearCache()` verwendet
+- Sichere Initialisierung in `cachedFilteredPropsForProps:` als Fallback
+
+---
+
 ## 📊 Gesamtstatus aller Phasen
 
 | Phase | Thema | Android | iOS | Status |
@@ -35,6 +62,9 @@
 | **Phase 1** | Fehlerbehandlung | ✅ | ✅ | **ABGESCHLOSSEN** |
 | **Phase 2** | Performance | ✅ | ✅ | **ABGESCHLOSSEN** |
 | **Phase 3** | Memory-Management | ✅ | ✅ | **ABGESCHLOSSEN** |
+| **Verbesserung 1** | Zirkelbeziehungen | ✅ | ✅ | **ABGESCHLOSSEN** |
+| **Verbesserung 2** | activityRefCache | ✅ | — | **ABGESCHLOSSEN** |
+| **Verbesserung 3** | gCacheLock nil-Check | — | ✅ | **ABGESCHLOSSEN** |
 
 ---
 
@@ -63,7 +93,12 @@
    - ✅ `getCacheSize()` zum Abfragen der Cache-Größe
    - ✅ Sichere Verwaltung aller Referenzen
 
-5. **Logging**
+5. **Zirkelbeziehungs-Erkennung**
+   - ✅ `Set<TiViewProxy> CLONING_IN_PROGRESS` mit `HashSet`
+   - ✅ try-finally für sichere Entfernung
+   - ✅ Warning-Logging bei Erkennung
+
+6. **Logging**
    - ✅ DEBUG-Log für alle Operationen
    - ✅ WARNING-Log für nicht-kritische Fehler
    - ✅ ERROR-Log mit StackTrace für kritische Fehler
@@ -77,7 +112,6 @@
 
 2. **Performance-Optimierung**
    - ✅ Property-Caching mit `@synchronized`
-   - ✅ `dispatch_once` für initiale Cache-Erstellung
    - ✅ Thread-sichere Implementierung
 
 3. **Memory-Management**
@@ -86,7 +120,16 @@
    - ✅ `getCacheSize()` zum Abfragen der Cache-Größe
    - ✅ NSValue-Wrapper für Pointer-basierte Schlüssel
 
-4. **Logging**
+4. **Zirkelbeziehungs-Erkennung**
+   - ✅ `NSMutableSet *gCloningInProgress`
+   - ✅ `@try/@finally` für sichere Entfernung
+   - ✅ Warning-Logging bei Erkennung
+
+5. **gCacheLock nil-Check**
+   - ✅ Alle Cache-Zugriffe prüfen auf `!= nil`
+   - ✅ Sichere Initialisierung als Fallback
+
+6. **Logging**
    - ✅ DebugLog für alle Operationen
    - ✅ WARNING-Log für nicht-kritische Fehler
    - ✅ ERROR-Log mit StackTrace für kritische Fehler
@@ -116,14 +159,14 @@
 
 ## 📝 Dokumentation
 
-**Letzte Aktualisierung**: Heute  
-**Aktueller Branch**: `optimization/phase-3-memory`  
-**Status**: **ALLE PHASEN ABGESCHLOSSEN**  
-**Nächster Schritt**: iOS-Build testen und Änderungen committen
+**Letzte Aktualisierung**: Heute
+**Aktueller Branch**: `optimization/all-phases-complete`
+**Status**: **ALLE PHASEN + VERBESSERUNGEN ABGESCHLOSSEN**
+**Nächster Schritt**: Android-Build testen und Änderungen committen
 
 ---
 
-## ✅ Akzeptanzkriterien - Alle Phasen
+## ✅ Akzeptanzkriterien - Alle Phasen + Verbesserungen
 
 - [x] **Input-Validierung** - Alle öffentlichen Methoden prüfen Parameter
 - [x] **Detailliertes Logging** - Alle Operationen protokollieren
@@ -134,7 +177,10 @@
 - [x] **Performance-Optimierung** - ≥20% Verbesserung erreicht
 - [x] **Memory-Management** - WeakReferences und Cache-Verwaltung
 - [x] **Thread-Sicherheit** - Synchronized-Blöcke und ConcurrentCollections
+- [x] **Zirkelbeziehungs-Erkennung** - Verhindert StackOverflow
+- [x] **gCacheLock nil-Check** - iOS Crash-Sicherheit
+- [x] **Dokumentation** - README mit API-Doku und Hinweisen
 
 ---
 
-*Status zuletzt aktualisiert: Heute*
+*Status zuletzt aktualisiert: Alle Phasen + Verbesserungen abgeschlossen*
