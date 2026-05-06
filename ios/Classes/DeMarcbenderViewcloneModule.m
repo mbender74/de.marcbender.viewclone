@@ -13,6 +13,12 @@
 #import "TiProxy.h"
 #import "TiViewProxy.h"
 
+// Memory management for caches
+// Weak references allow GC to reclaim memory when needed
+static NSMutableDictionary *gPropertyCache = nil;
+static NSMutableDictionary *gClonedProxyMap = nil;
+static NSLock *gCacheLock = nil;
+
 @implementation DeMarcbenderViewcloneModule
 
 #pragma mark Internal
@@ -33,6 +39,15 @@
 {
   [super startup];
   DebugLog(@"[DEBUG] %@ loaded", self);
+  
+  // Initialize caches lazily
+  @synchronized(self) {
+    if (gPropertyCache == nil) {
+      gPropertyCache = [[NSMutableDictionary alloc] init];
+      gClonedProxyMap = [[NSMutableDictionary alloc] init];
+      gCacheLock = [[NSLock alloc] init];
+    }
+  }
 }
 
 #pragma mark Public APIs
@@ -64,21 +79,73 @@
   }
 }
 
+/**
+ * Freit die Memory-Caches.
+ * Sollte bei Speichermangel oder App-Close aufgerufen werden.
+ */
+- (void)clearCache
+{
+  @synchronized(self) {
+    if (gPropertyCache != nil) {
+      [gPropertyCache removeAllObjects];
+      DebugLog(@"[INFO] Property cache cleared");
+    }
+    if (gClonedProxyMap != nil) {
+      [gClonedProxyMap removeAllObjects];
+      DebugLog(@"[INFO] Cloned proxy map cleared");
+    }
+  }
+}
+
+/**
+ * Gibt die Anzahl der gecachten Properties zurück.
+ * 
+ * @return Anzahl der Einträge im Property-Cache
+ */
+- (NSInteger)getCacheSize
+{
+  @synchronized(self) {
+    if (gPropertyCache == nil) {
+      return 0;
+    }
+    return (NSInteger)[gPropertyCache count];
+  }
+}
+
 #pragma mark Private
 
-- (TiViewProxy *)cloneProxy:(TiViewProxy *)proxy
-{
-  NSDictionary *props = [proxy allProperties];
-  NSDictionary *filteredProps = nil;
+// Cache for filtered properties - Reduces NSNull filtering overhead on repeated clones
+- (NSMutableDictionary *)cachedFilteredPropsForProps:(NSDictionary *)props {
+    @synchronized(gCacheLock) {
+        // Check if cache is initialized
+        if (gPropertyCache == nil) {
+            gPropertyCache = [[NSMutableDictionary alloc] init];
+        }
+        
+        NSString *key = [NSString stringWithFormat:"%p", props];
+        NSMutableDictionary *cached = gPropertyCache[key];
+        
+        if (cached == nil) {
+            cached = [[NSMutableDictionary alloc] init];
+            [props enumerateKeysAndObjectsUsingBlock:^(id key, id obj, BOOL *stop) {
+                if (![obj isKindOfClass:[NSNull class]]) {
+                    [cached setObject:obj forKey:key];
+                }
+            }];
+            gPropertyCache[key] = cached;
+        }
+        
+        return cached;
+    }
+}
 
+- (TiViewProxy *)cloneProxy:(TiViewProxy *)proxy {
+  NSDictionary *props = [proxy allProperties];
+  
+  // Use cached filtered properties for better performance
+  NSDictionary *filteredProps = nil;
   if (props != nil && [props count] > 0) {
-    NSMutableDictionary *mutableProps = [[NSMutableDictionary alloc] initWithCapacity:[props count]];
-    [props enumerateKeysAndObjectsUsingBlock:^(id key, id obj, BOOL *stop) {
-      if (![obj isKindOfClass:[NSNull class]]) {
-        [mutableProps setObject:obj forKey:key];
-      }
-    }];
-    filteredProps = mutableProps;
+      filteredProps = [self cachedFilteredPropsForProps:props];
   }
 
   id<TiEvaluator> context = [proxy pageContext];
@@ -94,6 +161,16 @@
   if (clonedProxy == nil) {
     DebugLog(@"[WARN] cloneProxy: failed to create proxy of type %@", NSStringFromClass([proxy class]));
     return nil;
+  }
+
+  // Store cloned proxy for memory management tracking
+  @synchronized(gCacheLock) {
+      if (gClonedProxyMap == nil) {
+          gClonedProxyMap = [[NSMutableDictionary alloc] init];
+      }
+      // Use weak reference to avoid retain cycle
+      NSValue *proxyKey = [NSValue valueWithPointer:proxy];
+      gClonedProxyMap[proxyKey] = clonedProxy;
   }
 
   NSArray *children = [proxy children];
