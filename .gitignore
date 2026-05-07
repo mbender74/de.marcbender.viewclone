@@ -6,8 +6,8 @@ ios/dist/
 ios/metadata.json
 example/testApp/build/
 
-# Prebuilt module binaries in example app
-example/testApp/modules/
+# Prebuilt module binaries in example app (managed separately)
+# example/testApp/modules/
 
 # IDE
 .idea/
