@@ -24,12 +24,12 @@ The Titanium SDK's built-in clone mechanism shares the same JavaScript wrapper b
 
    ```bash
    # Android
-   unzip -o android/dist/de.marcbender.viewclone-android-1.0.0.zip -d /path/to/your/app/modules_temp
+   unzip -o android/dist/de.marcbender.viewclone-android-1.1.0.zip -d /path/to/your/app/modules_temp
    mv modules_temp/modules/android/de.marcbender.viewclone /path/to/your/app/modules/android/
    rm -rf modules_temp
 
    # iOS
-   unzip -o ios/dist/de.marcbender.viewclone-iphone-1.0.0.zip -d /path/to/your/app/modules_temp
+   unzip -o ios/dist/de.marcbender.viewclone-iphone-1.1.0.zip -d /path/to/your/app/modules_temp
    mv modules_temp/modules/iphone/de.marcbender.viewclone /path/to/your/app/modules/iphone/
    rm -rf modules_temp
    ```
@@ -48,7 +48,7 @@ Add the module to your `tiapp.xml`:
 
 ```xml
 <modules>
-  <module version="1.0.0">de.marcbender.viewclone</module>
+  <module version="1.1.0">de.marcbender.viewclone</module>
 </modules>
 ```
 
@@ -78,7 +78,8 @@ Creates a deep clone of a `Ti.UI.View` proxy, including all properties and neste
 
 ### `clearCache()`
 
-Frees all internal caches (constructor cache, property cache, activity cache).
+Frees all internal caches (constructor cache, property cache, cloning-in-progress set).
+The cloning-in-progress set is replaced (not cleared) so that concurrent clones can still remove their entry in the finally block.
 Should be called when memory is low or the app is closing.
 
 **Returns:** `void`
