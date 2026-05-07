@@ -91,7 +91,11 @@ Useful for debugging and memory profiling.
 
 **Returns:** `number` — The cache size (number of entries)
 
+---
+
 ## Example Usage
+
+### Basic cloning
 
 ```js
 const viewclone = require('de.marcbender.viewclone');
@@ -178,6 +182,36 @@ clonedButton.addEventListener('click', function () {
 win.add(clonedButton);
 ```
 
+### Cache management
+
+```js
+const viewclone = require('de.marcbender.viewclone');
+
+// Check cache size before heavy cloning
+const before = viewclone.getCacheSize();
+Ti.API.info('Cache size before cloning: ' + before);
+
+// Perform many clones
+const clones = [];
+for (let i = 0; i < 50; i++) {
+  const original = Ti.UI.createLabel({ text: 'Label ' + i });
+  const cloned = viewclone.cloneView(original);
+  if (cloned) {
+    clones.push(cloned);
+  }
+}
+
+// Check cache size after cloning
+const after = viewclone.getCacheSize();
+Ti.API.info('Cache size after cloning: ' + after);
+
+// When done, free all caches to reclaim memory
+viewclone.clearCache();
+Ti.API.info('All caches cleared');
+```
+
+---
+
 ## Important Notes
 
 ### Accessing children: use `.children`, not `.getChildren()`
@@ -224,3 +258,4 @@ Apache Public License — see [LICENSE](LICENSE) for details.
 ## Author
 
 Marc Bender
+
