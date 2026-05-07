@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ti:app xmlns:ti="http://ti.tidev.io">
-	<id>de.marcbender.testapp</id>
+	<id>de.marcbender.testappcloning</id>
 	<name>testApp</name>
 	<version>1.0</version>
 	<publisher>not specified</publisher>

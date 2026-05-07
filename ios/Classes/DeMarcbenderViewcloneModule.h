@@ -7,6 +7,9 @@
  */
 
 #import "TiModule.h"
+#import "TiBase.h"
+#import "TiProxy.h"
+#import "TiViewProxy.h"
 
 @interface DeMarcbenderViewcloneModule : TiModule {
 

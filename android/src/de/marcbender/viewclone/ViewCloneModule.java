@@ -9,7 +9,6 @@ package de.marcbender.viewclone;
 
 import org.appcelerator.kroll.KrollDict;
 import org.appcelerator.kroll.KrollModule;
-import org.appcelerator.kroll.KrollObject;
 import org.appcelerator.kroll.KrollProxy;
 import org.appcelerator.kroll.annotations.Kroll;
 import org.appcelerator.titanium.TiApplication;
@@ -17,14 +16,13 @@ import org.appcelerator.titanium.proxy.TiViewProxy;
 import org.appcelerator.kroll.common.Log;
 import org.appcelerator.kroll.common.TiConfig;
 
-import android.app.Activity;
-import java.lang.ref.WeakReference;
 import java.util.HashSet;
 import java.util.Set;
-
-import java.lang.reflect.Constructor;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
+
+import java.lang.reflect.Constructor;
 
 
 @Kroll.module(name = "ViewClone", id = "de.marcbender.viewclone")
@@ -45,15 +43,16 @@ public class ViewCloneModule extends KrollModule
 	}
 
 	// Cache für Constructor-Objekte - Vermeidet wiederholte Reflection-Aufrufe
-	// WeakReference-Map ermöglicht GC des Caches wenn nötig
+	// ConcurrentHashMap ermöglicht thread-sicheren Lesezugriff ohne externe Sperren
 	private static final Map<Class<? extends TiViewProxy>, Constructor<? extends TiViewProxy>> CONSTRUCTOR_CACHE
 		= new ConcurrentHashMap<>();
 
 	// Set zur Erkennung von Zirkelbeziehungen - Vermeidet StackOverflow bei recursive references
-	private static final Set<TiViewProxy> CLONING_IN_PROGRESS = new HashSet<>();
-
-	// WeakReference für Activity-Referenzen - Vermeidet Memory-Leaks durch starke References
-	private final Map<TiViewProxy, WeakReference<Activity>> activityRefCache = new ConcurrentHashMap<>();
+	// ReentrantLock schützt clearCache() vor Race-Condition mit cloneProxy()-Aufrufen
+	// clearCache() ersetzt das Set (statt es zu leeren), damit parallele Clones das neue
+	// Set sehen, aber ihr Entry im alten Set korrekt im finally-Block entfernen können.
+	private static Set<TiViewProxy> CLONING_IN_PROGRESS = new HashSet<>();
+	private static final ReentrantLock CLONING_LOCK = new ReentrantLock();
 
 	@Kroll.method
 	public TiViewProxy cloneView(TiViewProxy proxy)
@@ -94,13 +93,19 @@ public class ViewCloneModule extends KrollModule
 		Log.d(LCAT, "Creating new instance of: " + proxy.getClass().getSimpleName());
 
 		// Zirkelbeziehungs-Erkennung - Vermeidet StackOverflow
-		if (CLONING_IN_PROGRESS.contains(proxy)) {
-			Log.w(LCAT, "Circular reference detected: " + proxy.getClass().getSimpleName() + " - skipping");
-			return null;
+		// Lock schützt clearCache() vor dem Löschen des Sets während eines Clones
+		// Das Set-Referenz wird im finally aktualisiert, damit clearCache() sofort
+		// das neue Set sieht, aber der alte Eintrag korrekt entfernt wird.
+		CLONING_LOCK.lock();
+		try {
+			if (CLONING_IN_PROGRESS.contains(proxy)) {
+				Log.w(LCAT, "Circular reference detected: " + proxy.getClass().getSimpleName() + " - skipping");
+				return null;
+			}
+			CLONING_IN_PROGRESS.add(proxy);
+		} finally {
+			CLONING_LOCK.unlock();
 		}
-
-		// Zum Set hinzufügen - Markiert Proxy als "wird geklont"
-		CLONING_IN_PROGRESS.add(proxy);
 
 		try {
 			// Constructor aus Cache holen oder erstellen
@@ -123,13 +128,6 @@ public class ViewCloneModule extends KrollModule
 				clonedProxy.setCreationUrl(proxy.getCreationUrl().url);
 			}
 
-			// Activity als WeakReference speichern - Vermeidet Memory-Leaks
-			Activity activity = proxy.getActivity();
-			if (activity != null) {
-				activityRefCache.put(clonedProxy, new WeakReference<>(activity));
-				clonedProxy.setActivity(activity);
-			}
-
 			// Kinder rekursiv klonen
 			TiViewProxy[] children = proxy.getChildren();
 			if (children != null && children.length > 0) {
@@ -150,7 +148,13 @@ public class ViewCloneModule extends KrollModule
 
 		} finally {
 			// Vom Set entfernen - Freigabe für zukünftige Clones
-			CLONING_IN_PROGRESS.remove(proxy);
+			// Lock schützt davor, dass clearCache() das Set zwischen Prüfen und Entfernen ersetzt
+			CLONING_LOCK.lock();
+			try {
+				CLONING_IN_PROGRESS.remove(proxy);
+			} finally {
+				CLONING_LOCK.unlock();
+			}
 		}
 	}
 
@@ -180,12 +184,20 @@ public class ViewCloneModule extends KrollModule
 	/**
 	 * Gibt die Memory-Caches frei.
 	 * Sollte bei App-Close oder Speichermangel aufgerufen werden.
+	 * Lock schützt vor Race-Condition: Falls ein paralleler Clone-Vorgang
+	 * mitten in cloneProxy() läuft, wird CLONING_IN_PROGRESS neu initialisiert
+	 * statt gelöscht — so bleibt die Zirkel-Erkennung stabil.
 	 */
 	@Kroll.method
 	public void clearCache() {
 		CONSTRUCTOR_CACHE.clear();
-		activityRefCache.clear();
-		CLONING_IN_PROGRESS.clear();
+		CLONING_LOCK.lock();
+		try {
+			CLONING_IN_PROGRESS = new HashSet<>();
+			Log.d(LCAT, "Cloning-in-progress set replaced (lock-held clones unaffected)");
+		} finally {
+			CLONING_LOCK.unlock();
+		}
 		Log.d(LCAT, "Memory caches cleared");
 	}
 

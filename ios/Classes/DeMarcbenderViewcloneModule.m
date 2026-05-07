@@ -14,9 +14,8 @@
 #import "TiViewProxy.h"
 
 // Memory management for caches
-// Weak references allow GC to reclaim memory when needed
+// NSMutableDictionary with NSValue (weak pointer) keys for automatic GC
 static NSMutableDictionary *gPropertyCache = nil;
-static NSMutableDictionary *gClonedProxyMap = nil;
 static NSLock *gCacheLock = nil;
 static NSMutableSet *gCloningInProgress = nil;
 
@@ -44,8 +43,9 @@ static NSMutableSet *gCloningInProgress = nil;
   // Initialize caches lazily
   @synchronized(self) {
     if (gPropertyCache == nil) {
+      // NSValue keys with nonretained (weak) pointer let GC collect entries
+      // when the original dictionary is deallocated (entry becomes unreachable)
       gPropertyCache = [[NSMutableDictionary alloc] init];
-      gClonedProxyMap = [[NSMutableDictionary alloc] init];
       gCacheLock = [[NSLock alloc] init];
       gCloningInProgress = [[NSMutableSet alloc] init];
     }
@@ -84,21 +84,24 @@ static NSMutableSet *gCloningInProgress = nil;
 /**
  * Freit die Memory-Caches.
  * Sollte bei Speichermangel oder App-Close aufgerufen werden.
+ * Lock schützt vor Race-Condition mit cloneProxy()-Aufrufen.
  */
 - (void)clearCache
 {
-  @synchronized(gCacheLock) {
-    if (gPropertyCache != nil) {
-      [gPropertyCache removeAllObjects];
-      DebugLog(@"[INFO] Property cache cleared");
-    }
-    if (gClonedProxyMap != nil) {
-      [gClonedProxyMap removeAllObjects];
-      DebugLog(@"[INFO] Cloned proxy map cleared");
-    }
-    if (gCloningInProgress != nil) {
-      [gCloningInProgress removeAllObjects];
-      DebugLog(@"[INFO] Cloning in-progress set cleared");
+  NSLock *lock = nil;
+  @synchronized(self) {
+    lock = gCacheLock;
+  }
+  if (lock != nil) {
+    @synchronized(lock) {
+      if (gPropertyCache != nil) {
+        [gPropertyCache removeAllObjects];
+        DebugLog(@"[INFO] Property cache cleared");
+      }
+      if (gCloningInProgress != nil) {
+        [gCloningInProgress removeAllObjects];
+        DebugLog(@"[INFO] Cloning in-progress set cleared");
+      }
     }
   }
 }
@@ -110,25 +113,49 @@ static NSMutableSet *gCloningInProgress = nil;
  */
 - (NSInteger)getCacheSize
 {
-  @synchronized(gCacheLock) {
-    if (gPropertyCache == nil) {
-      return 0;
-    }
-    return (NSInteger)[gPropertyCache count];
+  NSLock *lock = nil;
+  @synchronized(self) {
+    lock = gCacheLock;
   }
+  if (lock != nil) {
+    @synchronized(lock) {
+      if (gPropertyCache == nil) {
+        return 0;
+      }
+      return (NSInteger)[gPropertyCache count];
+    }
+  }
+  return 0;
 }
 
 #pragma mark Private
 
-// Cache for filtered properties - Reduces NSNull filtering overhead on repeated clones
+// Cache for filtered properties - uses NSValue with nonretained pointer as key
+// The weak reference in NSValue allows the key to become nil when the original
+// NSDictionary is deallocated. A periodic cleanup removes all nil-value entries.
 - (NSMutableDictionary *)cachedFilteredPropsForProps:(NSDictionary *)props {
-    @synchronized(gCacheLock) {
-        // Check if cache is initialized
+    NSLock *lock = nil;
+    @synchronized(self) {
+        lock = gCacheLock;
+    }
+    // Early-Return: if caches not yet initialized, filter directly without caching
+    if (lock == nil) {
+        NSMutableDictionary *filtered = [[NSMutableDictionary alloc] init];
+        [props enumerateKeysAndObjectsUsingBlock:^(id key, id obj, BOOL *stop) {
+            if (![obj isKindOfClass:[NSNull class]]) {
+                [filtered setObject:obj forKey:key];
+            }
+        }];
+        return filtered;
+    }
+
+    @synchronized(lock) {
         if (gPropertyCache == nil) {
             gPropertyCache = [[NSMutableDictionary alloc] init];
         }
 
-        NSString *key = [NSString stringWithFormat:"%p", props];
+        // NSValue with nonretained (weak) pointer — key becomes nil when original is freed
+        NSValue *key = [NSValue valueWithNonretainedObject:props];
         NSMutableDictionary *cached = gPropertyCache[key];
 
         if (cached == nil) {
@@ -141,77 +168,106 @@ static NSMutableSet *gCloningInProgress = nil;
             gPropertyCache[key] = cached;
         }
 
+        // Lazy cleanup: remove all entries whose key is nil (original object was GC'd)
+        if (gPropertyCache[key] == nil && cached == nil) {
+            NSMutableArray *nilKeys = [[NSMutableArray alloc] init];
+            [gPropertyCache enumerateKeysAndObjectsUsingBlock:^(id k, id v, BOOL *stop) {
+                if (k == nil || [k pointerValue] == nil) {
+                    [nilKeys addObject:k];
+                }
+            }];
+            if (nilKeys.count > 0) {
+                [gPropertyCache removeObjectsForKeys:nilKeys];
+            }
+        }
+
         return cached;
     }
 }
 
+/**
+ * Rekursiver Klon eines TiViewProxy.
+ *
+ * Zirkel-Erkennung ist vollständig in einem Lock-Block gekapselt:
+ * 1. Prüfen + Hinzufügen unter Lock (verhindert Race mit clearCache/anderen Threads)
+ * 2. @try/@catch um den gesamten Clone-Body
+ * 3. Remove immer im @finally unter Lock (auch bei Exception — verhindert blockierte zukünftige Clones)
+ */
 - (TiViewProxy *)cloneProxy:(TiViewProxy *)proxy {
-  // Zirkelbeziehungs-Erkennung - Vermeidet StackOverflow bei recursive references
-  if (gCloningInProgress != nil && [gCloningInProgress containsObject:proxy]) {
-    DebugLog(@"[WARN] Circular reference detected: %@ - skipping", NSStringFromClass([proxy class]));
-    return nil;
-  }
-
-  // Zum Set hinzufügen - Markiert Proxy als "wird geklont"
-  if (gCloningInProgress != nil) {
-    [gCloningInProgress addObject:proxy];
-  }
-
-  @try {
-    NSDictionary *props = [proxy allProperties];
-
-    // Use cached filtered properties for better performance
-    NSDictionary *filteredProps = nil;
-    if (props != nil && [props count] > 0) {
-        filteredProps = [self cachedFilteredPropsForProps:props];
+    NSLock *lock = nil;
+    @synchronized(self) {
+        lock = gCacheLock;
     }
 
-    id<TiEvaluator> context = [proxy pageContext];
-    if (context == nil) {
-      context = [self pageContext];
-    }
-
-    // Create proxy directly from the source class — avoids string resolution
-    // and NSClassFromString overhead in createProxy:withProperties:inContext:
-    NSArray *initArgs = filteredProps != nil ? @[ filteredProps ] : nil;
-    TiViewProxy *clonedProxy = [[[proxy class] alloc] _initWithPageContext:context args:initArgs];
-
-    if (clonedProxy == nil) {
-      DebugLog(@"[WARN] cloneProxy: failed to create proxy of type %@", NSStringFromClass([proxy class]));
-      return nil;
-    }
-
-    // Store cloned proxy for memory management tracking
-    @synchronized(gCacheLock) {
-        if (gClonedProxyMap == nil) {
-            gClonedProxyMap = [[NSMutableDictionary alloc] init];
+    // Zirkel-Erkennung unter Lock — verhindert Race-Condition bei parallelen Aufrufen
+    if (lock != nil) {
+        @synchronized(lock) {
+            if (gCloningInProgress != nil && [gCloningInProgress containsObject:proxy]) {
+                DebugLog(@"[WARN] Circular reference detected: %@ - skipping", NSStringFromClass([proxy class]));
+                return nil;
+            }
+            if (gCloningInProgress != nil) {
+                [gCloningInProgress addObject:proxy];
+            }
         }
-        // Use weak reference to avoid retain cycle
-        NSValue *proxyKey = [NSValue valueWithPointer:proxy];
-        gClonedProxyMap[proxyKey] = clonedProxy;
     }
 
-    NSArray *children = [proxy children];
-    if (children != nil && [children count] > 0) {
-      for (id childObj in children) {
-        if (![childObj isKindOfClass:[TiViewProxy class]]) {
-          continue;
+    @try {
+        NSDictionary *props = [proxy allProperties];
+
+        // Use cached filtered properties for better performance
+        NSDictionary *filteredProps = nil;
+        if (props != nil && [props count] > 0) {
+            filteredProps = [self cachedFilteredPropsForProps:props];
         }
-        TiViewProxy *clonedChild = [self cloneProxy:(TiViewProxy *)childObj];
-        if (clonedChild != nil) {
-          [clonedProxy add:clonedChild];
+
+        id<TiEvaluator> context = [proxy pageContext];
+        if (context == nil) {
+          context = [self pageContext];
         }
-      }
-    }
 
-    return clonedProxy;
+        // Create proxy directly from the source class — avoids string resolution
+        // and NSClassFromString overhead in createProxy:withProperties:inContext:
+        NSArray *initArgs = filteredProps != nil ? @[ filteredProps ] : nil;
+        TiViewProxy *clonedProxy = [[[proxy class] alloc] _initWithPageContext:context args:initArgs];
 
-  } @finally {
-    // Vom Set entfernen - Freigabe für zukünftige Clones
-    if (gCloningInProgress != nil) {
-      [gCloningInProgress removeObject:proxy];
+        if (clonedProxy == nil) {
+          DebugLog(@"[WARN] cloneProxy: failed to create proxy of type %@", NSStringFromClass([proxy class]));
+          return nil;
+        }
+
+        // Creation URL (baseURL) übernehmen — konsistent mit Android-Implementierung
+        NSURL *baseURL = [proxy _baseURL];
+        if (baseURL != nil) {
+          [clonedProxy _setBaseURL:baseURL];
+        }
+
+        NSArray *children = [proxy children];
+        if (children != nil && [children count] > 0) {
+          for (id childObj in children) {
+            if (![childObj isKindOfClass:[TiViewProxy class]]) {
+              continue;
+            }
+            TiViewProxy *clonedChild = [self cloneProxy:(TiViewProxy *)childObj];
+            if (clonedChild != nil) {
+              [clonedProxy add:clonedChild];
+            }
+          }
+        }
+
+        return clonedProxy;
+
+    } @finally {
+        // Remove from in-progress set ALWAYS — even on exception
+        // Without this, a failed clone permanently blocks future clones of the same proxy
+        if (lock != nil) {
+            @synchronized(lock) {
+                if (gCloningInProgress != nil) {
+                    [gCloningInProgress removeObject:proxy];
+                }
+            }
+        }
     }
-  }
 }
 
 @end

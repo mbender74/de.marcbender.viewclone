@@ -127,7 +127,7 @@ function testComplexLayout() {
 	if (clonedContainer) {
 		clonedContainer.top = 20;
 		clonedContainer.left = 20;
-		clonedContainer.backgroundColor = '#cfc';
+		clonedContainer.backgroundColor = 'green';
 		Ti.API.info("Complex layout cloned successfully");
 
 		// Check cloned children (use .children property, not .getChildren() method)
@@ -140,6 +140,7 @@ function testComplexLayout() {
 				Ti.API.info("First child apiName: " + children[0].apiName);
 				Ti.API.info("First child text: " + children[0].text);
 				children[0].text = 'Cloned Header';
+				children[0].backgroundColor = 'red';
 			}
 
 			// Check content children
@@ -200,7 +201,7 @@ function testView() {
 			});
 
 			scrollView.add(clonedButton);
-			Ti.API.info("View with event listener cloned successfully");
+			Ti.API.info("View cloned successfully");
 			label.text += "Test 3: Clone View - OK\n";
 		} else {
 			Ti.API.error("Failed to clone view");
